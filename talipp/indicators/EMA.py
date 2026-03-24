@@ -29,8 +29,41 @@ class EMA(Indicator):
                          input_sampling=input_sampling)
 
         self.period = period
+        self._mult = 2.0 / (period + 1.0)
+        self._one_minus_mult = 1.0 - self._mult
 
         self.initialize(input_values, input_indicator)
+
+    def add_input_value(self, value: Any) -> None:
+        self._add_single(value)
+
+    def add(self, value: Any) -> None:
+        if isinstance(value, list):
+            for v in value:
+                self._add_single(v)
+        else:
+            self._add_single(value)
+
+    def _add_single(self, value: Any) -> None:
+        if self.input_modifier is not None:
+            value = self.input_modifier(value)
+        for sub_indicator in self.sub_indicators:
+            sub_indicator.add(value)
+        input_values = self.input_values
+        input_values.append(value)
+        n = len(input_values)
+        period = self.period
+        if value is None or n < period or input_values[-period] is None:
+            new_output_value = None
+        elif n == period or input_values[-period - 1] is None:
+            new_output_value = sum(input_values[-period:]) / period
+        else:
+            new_output_value = self._mult * value + self._one_minus_mult * self.output_values[-1]
+        if new_output_value is None and self.output_values:
+            new_output_value = self.output_values[-1]
+        self.output_values.append(new_output_value)
+        for listener in self.output_listeners:
+            listener.add(new_output_value)
 
     def _calculate_new_value(self) -> Any:
         if not has_valid_values(self.input_values, self.period):
@@ -38,5 +71,4 @@ class EMA(Indicator):
         elif has_valid_values(self.input_values, self.period, exact=True):
             return sum(self.input_values[-self.period:]) / self.period
         else:
-            mult = 2.0 / (self.period + 1.0)
-            return float(mult * self.input_values[-1] + (1.0 - mult) * self.output_values[-1])
+            return self._mult * self.input_values[-1] + self._one_minus_mult * self.output_values[-1]

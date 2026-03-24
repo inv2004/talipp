@@ -29,14 +29,46 @@ class SMA(Indicator):
                          input_sampling=input_sampling)
 
         self.period = period
+        self._period_f = float(period)
 
         self.initialize(input_values, input_indicator)
+
+    def add_input_value(self, value: Any) -> None:
+        self._add_single(value)
+
+    def add(self, value: Any) -> None:
+        if isinstance(value, list):
+            for v in value:
+                self._add_single(v)
+        else:
+            self._add_single(value)
+
+    def _add_single(self, value: Any) -> None:
+        if self.input_modifier is not None:
+            value = self.input_modifier(value)
+        for sub_indicator in self.sub_indicators:
+            sub_indicator.add(value)
+        input_values = self.input_values
+        input_values.append(value)
+        n = len(input_values)
+        period = self.period
+        if value is None or n < period or input_values[-period] is None:
+            new_output_value = None
+        elif n == period or input_values[-period - 1] is None:
+            new_output_value = sum(input_values[-period:]) / self._period_f
+        else:
+            new_output_value = self.output_values[-1] - (input_values[-period - 1] - value) / self._period_f
+        if new_output_value is None and self.output_values:
+            new_output_value = self.output_values[-1]
+        self.output_values.append(new_output_value)
+        for listener in self.output_listeners:
+            listener.add(new_output_value)
 
     def _calculate_new_value(self) -> Any:
         if has_valid_values(self.input_values, self.period + 1):
             return self.output_values[-1] - \
-                   (self.input_values[-self.period - 1] - self.input_values[-1]) / float(self.period)
+                   (self.input_values[-self.period - 1] - self.input_values[-1]) / self._period_f
         elif has_valid_values(self.input_values, self.period, exact=True):
-            return float(sum(self.input_values[-self.period:])) / self.period
-        else: # len(self.input_values) < self.period
+            return sum(self.input_values[-self.period:]) / self._period_f
+        else:
             return None

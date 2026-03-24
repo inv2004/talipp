@@ -61,6 +61,9 @@ class BB(Indicator):
 
         self.initialize(input_values, input_indicator)
 
+    def add_input_value(self, value) -> None:
+        self.add(value)
+
     def _calculate_new_value(self) -> Any:
         if not has_valid_values(self.input_values, self.period):
             return None

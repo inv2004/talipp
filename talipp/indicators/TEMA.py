@@ -39,6 +39,9 @@ class TEMA(Indicator):
 
         self.initialize(input_values, input_indicator)
 
+    def add_input_value(self, value) -> None:
+        self.add(value)
+
     def _calculate_new_value(self) -> Any:
         if not has_valid_values(self.ema_ema_ema, 1):
             return None
