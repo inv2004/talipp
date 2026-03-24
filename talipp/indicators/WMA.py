@@ -29,18 +29,42 @@ class WMA(Indicator):
                          input_sampling=input_sampling)
 
         self.period = period
-
         self.denom_sum = period * (period + 1) / 2.0
+        self._weights = tuple(range(1, period + 1))
 
         self.initialize(input_values, input_indicator)
+
+    def add_input_value(self, value: Any) -> None:
+        self._add_single(value)
+
+    def add(self, value: Any) -> None:
+        if isinstance(value, list):
+            for v in value:
+                self._add_single(v)
+        else:
+            self._add_single(value)
+
+    def _add_single(self, value: Any) -> None:
+        if self.input_modifier is not None:
+            value = self.input_modifier(value)
+        for sub_indicator in self.sub_indicators:
+            sub_indicator.add(value)
+        input_values = self.input_values
+        input_values.append(value)
+        n = len(input_values)
+        period = self.period
+        if value is None or n < period or input_values[-period] is None:
+            new_output_value = None
+        else:
+            new_output_value = sum(v * w for v, w in zip(input_values[-period:], self._weights)) / self.denom_sum
+        if new_output_value is None and self.output_values:
+            new_output_value = self.output_values[-1]
+        self.output_values.append(new_output_value)
+        for listener in self.output_listeners:
+            listener.add(new_output_value)
 
     def _calculate_new_value(self) -> Any:
         if not has_valid_values(self.input_values, self.period):
             return None
 
-        s = 0.0
-        for i in range(self.period, 0, -1):
-            index = len(self.input_values) - self.period + i - 1  # decreases from end of array with increasing i
-            s += self.input_values[index] * i
-
-        return s / self.denom_sum
+        return sum(v * w for v, w in zip(self.input_values[-self.period:], self._weights)) / self.denom_sum

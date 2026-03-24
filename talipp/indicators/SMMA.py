@@ -6,6 +6,7 @@ from talipp.input import SamplingPeriodType
 
 
 class SMMA(Indicator):
+    __slots__ = ('period', '_period_f', '_period_m1', '_ready')
     """Smoothed Moving Average
 
     Input type: `float`
@@ -30,6 +31,7 @@ class SMMA(Indicator):
         self.period = period
         self._period_f = float(period)
         self._period_m1 = period - 1
+        self._ready = False
 
         self.initialize(input_values, input_indicator)
 
@@ -44,6 +46,18 @@ class SMMA(Indicator):
             self._add_single(value)
 
     def _add_single(self, value: Any) -> None:
+        if self._ready:
+            if self.input_modifier is not None:
+                value = self.input_modifier(value)
+            ov = self.output_values
+            new_v = (ov[-1] * self._period_m1 + value) / self._period_f
+            self.input_values.append(value)
+            ov.append(new_v)
+            if self.output_listeners:
+                for listener in self.output_listeners:
+                    listener.add(new_v)
+            return
+
         if self.input_modifier is not None:
             value = self.input_modifier(value)
         for sub_indicator in self.sub_indicators:
@@ -56,13 +70,23 @@ class SMMA(Indicator):
             new_output_value = None
         elif n == period or input_values[-period - 1] is None:
             new_output_value = sum(input_values[-period:]) / self._period_f
+            self._ready = True
         else:
             new_output_value = (self.output_values[-1] * self._period_m1 + value) / self._period_f
+            self._ready = True
         if new_output_value is None and self.output_values:
             new_output_value = self.output_values[-1]
         self.output_values.append(new_output_value)
-        for listener in self.output_listeners:
-            listener.add(new_output_value)
+        if self.output_listeners:
+            for listener in self.output_listeners:
+                listener.add(new_output_value)
+
+    def _remove_custom(self) -> None:
+        if len(self.input_values) <= self.period:
+            self._ready = False
+
+    def _remove_all_custom(self) -> None:
+        self._ready = False
 
     def _calculate_new_value(self) -> Any:
         if not has_valid_values(self.input_values, self.period):

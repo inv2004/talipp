@@ -22,6 +22,9 @@ class Indicator(Sequence):
     """
 
     __metaclass__ = ABCMeta
+    __slots__ = ('input_modifier', 'output_value_type', 'input_sampler',
+                 'input_values', 'output_values', 'managed_sequences',
+                 'sub_indicators', 'output_listeners')
 
     def __init__(self,
                  input_modifier: InputModifierType = None,
@@ -96,35 +99,39 @@ class Indicator(Sequence):
             value: Value to be added.
         """
 
+        if isinstance(value, list):
+            for v in value:
+                self._add_scalar(v)
+        else:
+            self._add_scalar(value)
+
+    def _add_scalar(self, value: Any) -> None:
         if (self.input_sampler is not None
                 and has_valid_values(self.input_values)
                 and self.input_sampler.is_same_period(value, self.input_values[-1])):
             self.update(value)
+            return
+
+        if value is not None and self.input_modifier is not None:
+            value = self.input_modifier(value)
+
+        for sub_indicator in self.sub_indicators:
+            sub_indicator.add(value)
+
+        self.input_values.append(value)
+
+        if value is not None:
+            new_output_value = self._calculate_new_value()
         else:
-            if not isinstance(value, list):
-                value = [value]
+            new_output_value = None
 
-            for input_value in value:
-                if input_value is not None and self.input_modifier is not None:
-                    input_value = self.input_modifier(input_value)
+        if new_output_value is None and len(self.output_values) > 0:
+            new_output_value = self.output_values[-1]
 
-                for sub_indicator in self.sub_indicators:
-                    sub_indicator.add(input_value)
+        self._add_to_output_values(new_output_value)
 
-                self.input_values.append(input_value)
-
-                if input_value is not None:
-                    new_output_value = self._calculate_new_value()
-                else:
-                    new_output_value = None
-
-                if new_output_value is None and len(self.output_values) > 0:
-                    new_output_value = self.output_values[-1]
-
-                self._add_to_output_values(new_output_value)
-
-                for listener in self.output_listeners:
-                    listener.add(new_output_value)
+        for listener in self.output_listeners:
+            listener.add(new_output_value)
 
     def update_input_value(self, value: Any) -> None:
         """**Deprecated.** Use [update][talipp.indicators.Indicator.Indicator.update] method instead.

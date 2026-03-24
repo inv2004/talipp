@@ -7,6 +7,7 @@ from talipp.input import SamplingPeriodType
 
 
 class StdDev(Indicator):
+    __slots__ = ('period', '_period_f')
     """Standard Deviation.
 
     Input type: `float`

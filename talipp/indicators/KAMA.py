@@ -14,8 +14,8 @@ class KAMA(Indicator):
 
     Args:
         period: Volatility period.
-        fast_ema_constant_period: Fast [EMA][talipp.indicators.EMA] smoothing factor.
-        slow_ema_constant_period: Slow [EMA][talipp.indicators.EMA] smoothing factor.
+        fast_ema_constant_period: Fast EMA smoothing factor.
+        slow_ema_constant_period: Slow EMA smoothing factor.
         input_values: List of input values.
         input_indicator: Input indicator.
         input_modifier: Input modifier.
@@ -36,34 +36,58 @@ class KAMA(Indicator):
 
         self.fast_smoothing_constant = 2.0 / (fast_ema_constant_period + 1)
         self.slow_smoothing_constant = 2.0 / (slow_ema_constant_period + 1)
+        self._sc_diff = self.fast_smoothing_constant - self.slow_smoothing_constant
 
         self.volatility = []
         self.add_managed_sequence(self.volatility)
 
         self.initialize(input_values, input_indicator)
 
+    def add_input_value(self, value: Any) -> None:
+        self._add_single(value)
+
+    def add(self, value: Any) -> None:
+        if isinstance(value, list):
+            for v in value:
+                self._add_single(v)
+        else:
+            self._add_single(value)
+
+    def _add_single(self, value: Any) -> None:
+        if self.input_modifier is not None:
+            value = self.input_modifier(value)
+        self.input_values.append(value)
+        new_output_value = self._calculate_new_value()
+        if new_output_value is None and self.output_values:
+            new_output_value = self.output_values[-1]
+        self.output_values.append(new_output_value)
+        for listener in self.output_listeners:
+            listener.add(new_output_value)
+
     def _calculate_new_value(self) -> Any:
-        if not has_valid_values(self.input_values, 2):
+        input_values = self.input_values
+        n = len(input_values)
+
+        if n < 2:
             return None
 
-        self.volatility.append(abs(self.input_values[-1] - self.input_values[-2]))
+        self.volatility.append(abs(input_values[-1] - input_values[-2]))
 
-        if not has_valid_values(self.volatility, self.period):
+        period = self.period
+        if not has_valid_values(self.volatility, period):
             return None
 
-        volatility = sum(self.volatility[-self.period:])
-        change = abs(self.input_values[-1] - self.input_values[-self.period - 1])
+        volatility = sum(self.volatility[-period:])
+        change = abs(input_values[-1] - input_values[-period - 1])
 
         if volatility != 0:
-            efficiency_ratio = float(change) / volatility
+            efficiency_ratio = change / volatility
         else:
             efficiency_ratio = 0
 
-        smoothing_constant = (efficiency_ratio * (self.fast_smoothing_constant - self.slow_smoothing_constant) + self.slow_smoothing_constant)**2
+        sc = (efficiency_ratio * self._sc_diff + self.slow_smoothing_constant) ** 2
 
-        if not has_valid_values(self.output_values, 1):
-            prev_kama = self.input_values[-2]
-        else:
-            prev_kama = self.output_values[-1]
+        output_values = self.output_values
+        prev_kama = output_values[-1] if (output_values and output_values[-1] is not None) else input_values[-2]
 
-        return prev_kama + smoothing_constant * (self.input_values[-1] - prev_kama)
+        return prev_kama + sc * (input_values[-1] - prev_kama)

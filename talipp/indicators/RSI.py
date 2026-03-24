@@ -6,6 +6,7 @@ from talipp.input import SamplingPeriodType
 
 
 class RSI(Indicator):
+    __slots__ = ('period', '_period_f', '_period_m1', 'avg_gain', 'avg_loss')
     """Relative Strength Index.
 
     Input type: `float`

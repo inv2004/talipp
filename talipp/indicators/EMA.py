@@ -6,6 +6,7 @@ from talipp.input import SamplingPeriodType
 
 
 class EMA(Indicator):
+    __slots__ = ('period', '_mult', '_one_minus_mult', '_ready')
     """Exponential Moving Average.
 
     Input type: `float`
@@ -31,6 +32,7 @@ class EMA(Indicator):
         self.period = period
         self._mult = 2.0 / (period + 1.0)
         self._one_minus_mult = 1.0 - self._mult
+        self._ready = False
 
         self.initialize(input_values, input_indicator)
 
@@ -45,6 +47,18 @@ class EMA(Indicator):
             self._add_single(value)
 
     def _add_single(self, value: Any) -> None:
+        if self._ready:
+            if self.input_modifier is not None:
+                value = self.input_modifier(value)
+            ov = self.output_values
+            new_v = self._mult * value + self._one_minus_mult * ov[-1]
+            self.input_values.append(value)
+            ov.append(new_v)
+            if self.output_listeners:
+                for listener in self.output_listeners:
+                    listener.add(new_v)
+            return
+
         if self.input_modifier is not None:
             value = self.input_modifier(value)
         for sub_indicator in self.sub_indicators:
@@ -57,13 +71,23 @@ class EMA(Indicator):
             new_output_value = None
         elif n == period or input_values[-period - 1] is None:
             new_output_value = sum(input_values[-period:]) / period
+            self._ready = True
         else:
             new_output_value = self._mult * value + self._one_minus_mult * self.output_values[-1]
+            self._ready = True
         if new_output_value is None and self.output_values:
             new_output_value = self.output_values[-1]
         self.output_values.append(new_output_value)
-        for listener in self.output_listeners:
-            listener.add(new_output_value)
+        if self.output_listeners:
+            for listener in self.output_listeners:
+                listener.add(new_output_value)
+
+    def _remove_custom(self) -> None:
+        if len(self.input_values) <= self.period:
+            self._ready = False
+
+    def _remove_all_custom(self) -> None:
+        self._ready = False
 
     def _calculate_new_value(self) -> Any:
         if not has_valid_values(self.input_values, self.period):
